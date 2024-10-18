@@ -2,21 +2,32 @@
 ///
 /// ```
 /// tokio::spawn({
-///     let_clone!(self: this, cx.io, cx.disk, cx.health_check);
+///     let_clone!(self: this, cx.{io, disk, health_check: check});
 ///     async move {
-///         this.do_something(io, disk, health_check)
+///         this.do_something(io, disk, check)
 ///     }
 /// })
 /// ```
 #[macro_export]
 macro_rules! let_clone {
-  ($($($cloneable:ident).+ $(: $rename:ident)?),+$(,)?) => {
-    $(
-      let_clone!(@inner $($cloneable).+;;$($rename)?);
-    )+
+  ($self:ident . { $($cloneable:ident $(: $rename:ident)?),+$(,)? }, $($tail:tt)+) => {
+    $crate::let_clone!($($self.$cloneable $(: $rename)?),+);
+    $crate::let_clone!($($tail)+);
   };
+  ($self:ident . { $($cloneable:ident $(: $rename:ident)?),+$(,)? }) => {
+    $crate::let_clone!($($self.$cloneable $(: $rename)?),+);
+  };
+
+  ($($cloneable:ident).+ $(: $rename:ident)?, $($tail:tt)+) => {
+    $crate::let_clone!(@inner $($cloneable).+;;$($rename)?);
+    $crate::let_clone!($($tail)+);
+  };
+  ($($cloneable:ident).+ $(: $rename:ident)? $(,)?) => {
+    $crate::let_clone!(@inner $($cloneable).+;;$($rename)?);
+  };
+
   (@inner $root:ident$(.$nested:ident)+; $($tail:ident).*; $($rename:ident)?) => {
-    let_clone!(@inner $($nested).+; $($tail.)*$root; $($rename:ident)?);
+    $crate::let_clone!(@inner $($nested).+; $($tail.)*$root; $($rename)?);
   };
   (@inner $cloneable:ident; $($nested:ident).*; $rename:ident) => {
     let $rename = $($nested.)*$cloneable.clone();
@@ -36,17 +47,22 @@ mod tests {
         struct Foo;
         struct Bar {
             baz: String,
+            boo: String,
         }
         impl Foo {
             fn foobar(self, _baz: String) {}
 
             fn run(&self, bar: &Bar) {
                 std::thread::spawn({
-                    let_clone!(self: this, bar.baz);
+                    let_clone!(self: this, bar.baz, bar.{baz: baz2, boo}, bar.boo: boo2);
+                    let _ = (baz2, boo, boo2);
                     move || this.foobar(baz)
                 });
             }
         }
-        Foo.run(&Bar { baz: "baz".into() });
+        Foo.run(&Bar {
+            baz: "baz".into(),
+            boo: "boo".into(),
+        });
     }
 }
